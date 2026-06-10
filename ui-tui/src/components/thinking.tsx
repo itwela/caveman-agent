@@ -327,11 +327,7 @@ function SubagentAccordion({
   const aggregate = node.aggregate
 
   const statusTone: 'dim' | 'error' | 'warn' =
-    item.status === 'error' || item.status === 'failed'
-      ? 'error'
-      : item.status === 'interrupted' || item.status === 'timeout'
-        ? 'warn'
-        : 'dim'
+    item.status === 'failed' ? 'error' : item.status === 'interrupted' ? 'warn' : 'dim'
 
   const prefix = item.taskCount > 1 ? `[${item.index + 1}/${item.taskCount}] ` : ''
   const goalLabel = item.goal || `Subagent ${item.index + 1}`
@@ -856,16 +852,7 @@ export const ToolTrail = memo(function ToolTrail({
       color: t.color.text,
       key: tool.id,
       label,
-      details: tool.verboseArgs
-        ? [
-            {
-              color: t.color.muted,
-              content: `Args:\n${boundedLiveRenderText(tool.verboseArgs)}`,
-              dimColor: true,
-              key: `${tool.id}-args`
-            }
-          ]
-        : [],
+      details: [],
       content: (
         <>
           <Spinner color={t.color.accent} variant="tool" /> {label}
@@ -1073,10 +1060,6 @@ export const ToolTrail = memo(function ToolTrail({
             const branch: TreeBranch = index === groups.length - 1 ? 'last' : 'mid'
             const childRails = nextTreeRails(rails, branch)
             const hasInlineSubagents = inlineDelegateKey === group.key
-            // Surface the /agents hint the moment a delegate group appears —
-            // while it's still in-flight and before any subagent has
-            // registered — so users can open the live monitor immediately.
-            const isDelegateGroup = group.label.startsWith('Delegate Task')
 
             return (
               <Box flexDirection="column" key={group.key}>
@@ -1087,11 +1070,6 @@ export const ToolTrail = memo(function ToolTrail({
                     <>
                       <Text color={t.color.accent}>● </Text>
                       {toolLabel(group)}
-                      {isDelegateGroup ? (
-                        <Text color={t.color.statusFg} dim>
-                          {'  (/agents to monitor)'}
-                        </Text>
-                      ) : null}
                     </>
                   }
                   rails={rails}

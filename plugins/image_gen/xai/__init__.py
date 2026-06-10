@@ -29,10 +29,9 @@ from agent.image_gen_provider import (
     error_response,
     resolve_aspect_ratio,
     save_b64_image,
-    save_url_image,
     success_response,
 )
-from tools.xai_http import hermes_xai_user_agent, resolve_xai_http_credentials
+from tools.xai_http import hermes_xai_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +39,13 @@ logger = logging.getLogger(__name__)
 # Model catalog
 # ---------------------------------------------------------------------------
 
+API_MODEL = "grok-imagine-image"
+
 _MODELS: Dict[str, Dict[str, Any]] = {
     "grok-imagine-image": {
         "display": "Grok Imagine Image",
         "speed": "~5-10s",
         "strengths": "Fast, high-quality",
-    },
-    "grok-imagine-image-quality": {
-        "display": "Grok Imagine Image (Quality)",
-        "speed": "~10-20s",
-        "strengths": "Higher fidelity / detail; slower than the standard model.",
     },
 }
 
@@ -131,8 +127,7 @@ class XAIImageGenProvider(ImageGenProvider):
         return "xAI (Grok)"
 
     def is_available(self) -> bool:
-        creds = resolve_xai_http_credentials()
-        return bool(creds.get("api_key"))
+        return bool(os.getenv("XAI_API_KEY"))
 
     def list_models(self) -> List[Dict[str, Any]]:
         return [
@@ -146,16 +141,17 @@ class XAIImageGenProvider(ImageGenProvider):
         ]
 
     def get_setup_schema(self) -> Dict[str, Any]:
-        # Auth resolution is delegated to the shared ``xai_grok`` post_setup
-        # hook (``hermes_cli/tools_config.py``); identical to the TTS / video
-        # gen entries so users see the same OAuth-or-API-key choice for every
-        # xAI service.
         return {
-            "name": "xAI Grok Imagine (image)",
+            "name": "xAI (Grok)",
             "badge": "paid",
-            "tag": "grok-imagine-image — text-to-image; uses xAI Grok OAuth or XAI_API_KEY",
-            "env_vars": [],
-            "post_setup": "xai_grok",
+            "tag": "Native xAI image generation via grok-imagine-image",
+            "env_vars": [
+                {
+                    "key": "XAI_API_KEY",
+                    "prompt": "xAI API key",
+                    "url": "https://console.x.ai/",
+                },
+            ],
         }
 
     def generate(
@@ -165,14 +161,12 @@ class XAIImageGenProvider(ImageGenProvider):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Generate an image using xAI's grok-imagine-image."""
-        creds = resolve_xai_http_credentials()
-        api_key = str(creds.get("api_key") or "").strip()
-        provider_name = str(creds.get("provider") or "xai").strip() or "xai"
+        api_key = os.getenv("XAI_API_KEY", "").strip()
         if not api_key:
             return error_response(
-                error="No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY.",
+                error="XAI_API_KEY not set. Get one at https://console.x.ai/",
                 error_type="missing_api_key",
-                provider=provider_name,
+                provider="xai",
                 aspect_ratio=aspect_ratio,
             )
 
@@ -183,7 +177,7 @@ class XAIImageGenProvider(ImageGenProvider):
         xai_res = resolution if resolution in _XAI_RESOLUTIONS else DEFAULT_RESOLUTION
 
         payload: Dict[str, Any] = {
-            "model": model_id,
+            "model": API_MODEL,
             "prompt": prompt,
             "aspect_ratio": xai_ar,
             "resolution": xai_res,
@@ -195,7 +189,7 @@ class XAIImageGenProvider(ImageGenProvider):
             "User-Agent": hermes_xai_user_agent(),
         }
 
-        base_url = str(creds.get("base_url") or "https://api.x.ai/v1").strip().rstrip("/")
+        base_url = (os.getenv("XAI_BASE_URL") or "https://api.x.ai/v1").strip().rstrip("/")
 
         try:
             response = requests.post(
@@ -216,7 +210,7 @@ class XAIImageGenProvider(ImageGenProvider):
             return error_response(
                 error=f"xAI image generation failed ({status}): {err_msg}",
                 error_type="api_error",
-                provider=provider_name,
+                provider="xai",
                 model=model_id,
                 prompt=prompt,
                 aspect_ratio=aspect,
@@ -225,7 +219,7 @@ class XAIImageGenProvider(ImageGenProvider):
             return error_response(
                 error="xAI image generation timed out (120s)",
                 error_type="timeout",
-                provider=provider_name,
+                provider="xai",
                 model=model_id,
                 prompt=prompt,
                 aspect_ratio=aspect,
@@ -234,7 +228,7 @@ class XAIImageGenProvider(ImageGenProvider):
             return error_response(
                 error=f"xAI connection error: {exc}",
                 error_type="connection_error",
-                provider=provider_name,
+                provider="xai",
                 model=model_id,
                 prompt=prompt,
                 aspect_ratio=aspect,
@@ -246,7 +240,7 @@ class XAIImageGenProvider(ImageGenProvider):
             return error_response(
                 error=f"xAI returned invalid JSON: {exc}",
                 error_type="invalid_response",
-                provider=provider_name,
+                provider="xai",
                 model=model_id,
                 prompt=prompt,
                 aspect_ratio=aspect,
@@ -258,7 +252,7 @@ class XAIImageGenProvider(ImageGenProvider):
             return error_response(
                 error="xAI returned no image data",
                 error_type="empty_response",
-                provider=provider_name,
+                provider="xai",
                 model=model_id,
                 prompt=prompt,
                 aspect_ratio=aspect,
@@ -282,24 +276,7 @@ class XAIImageGenProvider(ImageGenProvider):
                 )
             image_ref = str(saved_path)
         elif url:
-            # xAI's grok-imagine-image returns ephemeral ``imgen.x.ai/xai-tmp-*``
-            # URLs that 404 within minutes — by the time Telegram's
-            # ``send_photo`` or any downstream consumer fetches them, the
-            # asset is gone (#26942).  Materialise the bytes locally at
-            # tool-completion time so the gateway has a stable file path to
-            # upload, mirroring the b64 branch above and the audio_cache
-            # pattern used by text_to_speech.
-            try:
-                saved_path = save_url_image(url, prefix=f"xai_{model_id}")
-            except Exception as exc:
-                logger.warning(
-                    "xAI image URL %s could not be cached (%s); falling back to bare URL.",
-                    url,
-                    exc,
-                )
-                image_ref = url
-            else:
-                image_ref = str(saved_path)
+            image_ref = url
         else:
             return error_response(
                 error="xAI response contained neither b64_json nor URL",

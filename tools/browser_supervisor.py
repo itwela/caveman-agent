@@ -368,13 +368,11 @@ class CDPSupervisor:
                         pass
 
             try:
-                from agent.async_utils import safe_schedule_threadsafe
-                fut = safe_schedule_threadsafe(_close_ws(), loop)
-                if fut is not None:
-                    try:
-                        fut.result(timeout=2.0)
-                    except Exception:
-                        pass
+                fut = asyncio.run_coroutine_threadsafe(_close_ws(), loop)
+                try:
+                    fut.result(timeout=2.0)
+                except Exception:
+                    pass
             except RuntimeError:
                 pass  # loop already shutting down
         if self._thread is not None:
@@ -453,10 +451,7 @@ class CDPSupervisor:
             )
 
         try:
-            from agent.async_utils import safe_schedule_threadsafe
-            fut = safe_schedule_threadsafe(_do_respond(), loop)
-            if fut is None:
-                return {"ok": False, "error": "Browser supervisor loop unavailable"}
+            fut = asyncio.run_coroutine_threadsafe(_do_respond(), loop)
             fut.result(timeout=timeout)
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
@@ -496,12 +491,12 @@ class CDPSupervisor:
         if not session_id:
             return {"ok": False, "error": "supervisor has no attached page session"}
 
-        async def _do_eval(by_value: bool) -> Dict[str, Any]:
+        async def _do_eval() -> Dict[str, Any]:
             return await self._cdp(
                 "Runtime.evaluate",
                 {
                     "expression": expression,
-                    "returnByValue": by_value,
+                    "returnByValue": return_by_value,
                     "awaitPromise": await_promise,
                     # userGesture matters for things like clipboard / fullscreen
                     # APIs that require a user-activation context.
@@ -511,32 +506,11 @@ class CDPSupervisor:
                 timeout=timeout,
             )
 
-        from agent.async_utils import safe_schedule_threadsafe
-
-        def _run_eval(by_value: bool) -> Dict[str, Any]:
-            fut = safe_schedule_threadsafe(_do_eval(by_value), loop)
-            if fut is None:
-                raise RuntimeError("Browser supervisor loop unavailable")
-            return fut.result(timeout=timeout + 1)
-
         try:
-            response = _run_eval(return_by_value)
+            fut = asyncio.run_coroutine_threadsafe(_do_eval(), loop)
+            response = fut.result(timeout=timeout + 1)
         except Exception as exc:
-            # ``returnByValue=True`` asks Chrome to deep-serialize the result.
-            # For live DOM nodes / NodeLists / Window that serialization can
-            # blow past CDP's recursion guard and fail the whole call with
-            # ``Object reference chain is too long`` (a protocol-level error,
-            # not a JS exception).  Retry once with ``returnByValue=False`` so
-            # Chrome returns the object's description string instead — the same
-            # graceful degradation path used for ``document.querySelector(...)``
-            # results — rather than crashing the eval.
-            if return_by_value and "reference chain is too long" in str(exc).lower():
-                try:
-                    response = _run_eval(False)
-                except Exception as exc2:
-                    return {"ok": False, "error": f"{type(exc2).__name__}: {exc2}"}
-            else:
-                return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
         # Runtime.evaluate response shape:
         #   {"id": N, "result": {"result": {"type": "...", "value": ..., ...},

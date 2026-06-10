@@ -2,7 +2,6 @@ export interface ActiveTool {
   context?: string
   id: string
   name: string
-  verboseArgs?: string
   startedAt?: number
 }
 
@@ -17,8 +16,6 @@ export interface ActivityItem {
   text: string
   tone: 'error' | 'info' | 'warn'
 }
-
-export type SubagentStatus = 'completed' | 'error' | 'failed' | 'interrupted' | 'queued' | 'running' | 'timeout'
 
 export interface SubagentProgress {
   apiCalls?: number
@@ -39,7 +36,7 @@ export interface SubagentProgress {
   parentId: null | string
   reasoningTokens?: number
   startedAt?: number
-  status: SubagentStatus
+  status: 'completed' | 'failed' | 'interrupted' | 'queued' | 'running'
   summary?: string
   taskCount: number
   thinking: string[]
@@ -149,7 +146,6 @@ export interface SessionInfo {
   lazy?: boolean
   mcp_servers?: McpServerStatus[]
   model: string
-  profile_name?: string
   reasoning_effort?: string
   release_date?: string
   service_tier?: string
@@ -170,7 +166,6 @@ export interface Usage {
   context_used?: number
   cost_status?: string
   cost_usd?: number
-  dev_credits_spent_micros?: number
   input: number
   output: number
   reasoning?: number

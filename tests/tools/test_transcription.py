@@ -4,24 +4,18 @@ Tests cover provider selection, config loading, validation, and transcription
 dispatch.  All external dependencies (faster_whisper, openai) are mocked.
 """
 
+import json
 import os
 import tempfile
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch, mock_open
 
 import pytest
-
-
-def _fake_faster_whisper_module(mock_model):
-    return SimpleNamespace(WhisperModel=MagicMock(return_value=mock_model))
 
 
 # ---------------------------------------------------------------------------
 # Provider selection
 # ---------------------------------------------------------------------------
-
-
-pytestmark = pytest.mark.usefixtures("disable_lazy_stt_install")
 
 
 @pytest.fixture(autouse=True)
@@ -107,6 +101,7 @@ class TestValidateAudioFile:
         assert _validate_audio_file(str(f)) is None
 
     def test_too_large(self, tmp_path):
+        import stat as stat_mod
         f = tmp_path / "big.ogg"
         f.write_bytes(b"x")
         from tools.transcription_tools import _validate_audio_file, MAX_FILE_SIZE
@@ -142,9 +137,8 @@ class TestTranscribeLocal:
         mock_model = MagicMock()
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
 
-        fake_fw = _fake_faster_whisper_module(mock_model)
         with patch("tools.transcription_tools._HAS_FASTER_WHISPER", True), \
-             patch.dict("sys.modules", {"faster_whisper": fake_fw}), \
+             patch("faster_whisper.WhisperModel", return_value=mock_model), \
              patch("tools.transcription_tools._local_model", None):
             from tools.transcription_tools import _transcribe_local
             result = _transcribe_local(str(audio_file), "base")
@@ -289,7 +283,7 @@ class TestNormalizeLocalModel:
 
     def test_local_transcribe_normalises_model(self):
         """transcribe_audio with local provider must not pass 'whisper-1' to WhisperModel."""
-        import os
+        import tempfile, os
         from unittest.mock import MagicMock, patch
 
         with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
@@ -306,8 +300,7 @@ class TestNormalizeLocalModel:
                  }), \
                  patch("tools.transcription_tools._local_model", None), \
                  patch("tools.transcription_tools._local_model_name", None), \
-                 patch.dict("sys.modules", {"faster_whisper": _fake_faster_whisper_module(mock_model)}):
-                mock_cls = __import__("faster_whisper").WhisperModel
+                 patch("faster_whisper.WhisperModel", return_value=mock_model) as mock_cls:
                 from tools.transcription_tools import transcribe_audio
                 transcribe_audio(audio_file)
                 # WhisperModel must NOT have been called with "whisper-1"

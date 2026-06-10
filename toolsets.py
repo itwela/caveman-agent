@@ -33,9 +33,6 @@ _HERMES_CORE_TOOLS = [
     "web_search", "web_extract",
     # Terminal + process management
     "terminal", "process",
-    # Read the desktop GUI's embedded terminal pane (gated on HERMES_DESKTOP
-    # via check_fn in tools/read_terminal_tool.py — hidden outside the GUI).
-    "read_terminal",
     # File manipulation
     "read_file", "write_file", "patch", "search_files",
     # Vision + image generation
@@ -75,16 +72,6 @@ _HERMES_CORE_TOOLS = [
     "computer_use",
 ]
 
-# Webhook events may originate from untrusted third-party content (for example,
-# public PR titles/comments). Keep the default webhook toolset intentionally
-# constrained to avoid local file/system execution by prompt injection.
-_HERMES_WEBHOOK_SAFE_TOOLS = [
-    "web_search",
-    "web_extract",
-    "vision_analyze",
-    "clarify",
-]
-
 
 # Core toolset definitions
 # These can include individual tools or reference other toolsets
@@ -99,17 +86,6 @@ TOOLSETS = {
     "search": {
         "description": "Web search only (no content extraction/scraping)",
         "tools": ["web_search"],
-        "includes": []
-    },
-
-    "x_search": {
-        "description": (
-            "Search X (Twitter) posts and threads via xAI's built-in "
-            "x_search Responses tool. Available when xAI credentials are "
-            "configured (SuperGrok OAuth or XAI_API_KEY). Off by default; "
-            "enable in `hermes tools` → X (Twitter) Search."
-        ),
-        "tools": ["x_search"],
         "includes": []
     },
     
@@ -193,7 +169,18 @@ TOOLSETS = {
         "tools": ["send_message"],
         "includes": []
     },
-
+    
+    "rl": {
+        "description": "RL training tools for running reinforcement learning on Tinker-Atropos",
+        "tools": [
+            "rl_list_environments", "rl_select_environment",
+            "rl_get_current_config", "rl_edit_config",
+            "rl_start_training", "rl_check_status",
+            "rl_stop_training", "rl_get_results",
+            "rl_list_runs", "rl_test_inference"
+        ],
+        "includes": []
+    },
     
     "file": {
         "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
@@ -216,12 +203,6 @@ TOOLSETS = {
     "memory": {
         "description": "Persistent memory across sessions (personal notes + user profile)",
         "tools": ["memory"],
-        "includes": []
-    },
-
-    "context_engine": {
-        "description": "Runtime tools exposed by the active context engine",
-        "tools": [],
         "includes": []
     },
     
@@ -409,7 +390,7 @@ TOOLSETS = {
         # Mirrors hermes-cli so cron's "default" toolset is the same set of
         # core tools users see interactively — then `hermes tools` filters
         # them down per the platform config. _DEFAULT_OFF_TOOLSETS (moa,
-        # homeassistant) are excluded by _get_platform_tools() unless
+        # homeassistant, rl) are excluded by _get_platform_tools() unless
         # the user explicitly enables them.
         "description": "Default cron toolset - same core tools as hermes-cli; gated by `hermes tools`",
         "tools": _HERMES_CORE_TOOLS,
@@ -542,7 +523,7 @@ TOOLSETS = {
 
     "hermes-webhook": {
         "description": "Webhook toolset - receive and process external webhook events",
-        "tools": _HERMES_WEBHOOK_SAFE_TOOLS,
+        "tools": _HERMES_CORE_TOOLS,
         "includes": []
     },
 

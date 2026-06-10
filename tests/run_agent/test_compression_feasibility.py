@@ -16,16 +16,6 @@ from run_agent import AIAgent
 from agent.context_compressor import ContextCompressor
 
 
-@pytest.fixture(autouse=True)
-def _stable_aux_provider_config():
-    """Keep feasibility tests independent from the developer's config.yaml."""
-    with patch(
-        "agent.auxiliary_client._resolve_task_provider_model",
-        return_value=("auto", None, None, None, None),
-    ):
-        yield
-
-
 def _make_agent(
     *,
     compression_enabled: bool = True,
@@ -51,7 +41,6 @@ def _make_agent(
     agent.tool_progress_callback = None
     agent._compression_warning = None
     agent._aux_compression_context_length_config = None
-    agent._custom_providers = []
     agent.tools = []
 
     compressor = MagicMock(spec=ContextCompressor)
@@ -193,7 +182,6 @@ def test_feasibility_check_passes_config_context_length(mock_get_client, mock_ct
         api_key="sk-custom",
         config_context_length=1_000_000,
         provider="openrouter",
-        custom_providers=[],
     )
 
 
@@ -217,19 +205,11 @@ def test_feasibility_check_ignores_invalid_context_length(mock_get_client, mock_
         api_key="sk-test",
         config_context_length=None,
         provider="openrouter",
-        custom_providers=[],
     )
 
 
 def test_init_feasibility_check_uses_aux_context_override_from_config():
-    """Lazy feasibility check should cache and forward auxiliary.compression.context_length.
-
-    NB: feasibility check is deferred from AIAgent.__init__ to the first
-    actual compression attempt (saves ~400ms cold startup on short sessions
-    that never trigger compression). The test drives the check explicitly
-    via ``agent._check_compression_model_feasibility()`` to assert the
-    config-override threading.
-    """
+    """Real AIAgent init should cache and forward auxiliary.compression.context_length."""
 
     class _StubCompressor:
         def __init__(self, *args, **kwargs):
@@ -271,22 +251,13 @@ def test_init_feasibility_check_uses_aux_context_override_from_config():
             skip_memory=True,
         )
 
-        # Config override is captured eagerly in __init__ (still needed
-        # because the threshold-derivation logic at construction time
-        # consults it).
-        assert agent._aux_compression_context_length_config == 1_000_000
-
-        # The expensive feasibility probe is deferred. Drive it manually
-        # to validate the call shape still forwards the override correctly.
-        agent._check_compression_model_feasibility()
-
+    assert agent._aux_compression_context_length_config == 1_000_000
     mock_ctx_len.assert_called_once_with(
         "custom/big-model",
         base_url="http://custom-endpoint:8080/v1",
         api_key="sk-custom",
         config_context_length=1_000_000,
         provider="",
-        custom_providers=[],
     )
 
 
