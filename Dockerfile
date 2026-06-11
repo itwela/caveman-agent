@@ -115,3 +115,4 @@ ENV HERMES_HOME=/opt/data
 ENV PATH="/opt/data/.local/bin:${PATH}"
 # VOLUME removed — Railway volumes are managed via Railway dashboard
 ENTRYPOINT [ "/usr/bin/tini", "-g", "--", "/opt/hermes/docker/entrypoint.sh" ]
+CMD [ "gateway", "run" ]
