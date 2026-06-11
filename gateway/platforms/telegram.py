@@ -2054,6 +2054,15 @@ class TelegramAdapter(BasePlatformAdapter):
                 retry_kwargs = dict(kwargs)
                 retry_kwargs.pop("message_thread_id", None)
                 return await self._bot.send_message(**retry_kwargs)
+            # Markdown parse failure — retry as plain text
+            if self._is_bad_request_error(send_err) and (
+                "parse" in str(send_err).lower() or "entit" in str(send_err).lower()
+            ):
+                logger.warning("[%s] MarkdownV2 parse failed in control path, falling back to plain text: %s", self.name, send_err)
+                plain_kwargs = dict(kwargs)
+                plain_kwargs["parse_mode"] = None
+                plain_kwargs["text"] = _strip_mdv2(plain_kwargs.get("text", ""))
+                return await self._bot.send_message(**plain_kwargs)
             raise
 
     async def send_update_prompt(
