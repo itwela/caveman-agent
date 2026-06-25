@@ -143,6 +143,19 @@ case "${HERMES_DASHBOARD:-}" in
         ;;
 esac
 
+# Start Obsidian Headless continuous sync if a vault path is configured.
+# Gate: set OB_VAULT_PATH in Railway after completing the one-time `ob login`
+# + `ob sync-setup` via Railway SSH. Auth is stored in $HERMES_HOME/.config
+# and persists on the Railway volume across restarts.
+if [ -n "${OB_VAULT_PATH:-}" ]; then
+    echo "Starting Obsidian Headless sync: $OB_VAULT_PATH"
+    mkdir -p "$OB_VAULT_PATH"
+    (
+        HOME="$HERMES_HOME" ob sync --path "$OB_VAULT_PATH" --continuous 2>&1 \
+            | sed -u 's/^/[ob-sync] /'
+    ) &
+fi
+
 # Final exec: two supported invocation patterns.
 #
 #   docker run <image>                 -> exec `hermes` with no args (legacy default)
